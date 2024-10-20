@@ -23,6 +23,7 @@ fun lcm(nums: List<Int>): Int {
 /**
  * Generates all integer partitions of a number n.
  */
+private val partitionsCache = mutableMapOf<Int, List<List<Int>>>()
 fun partitions(n: Int): List<List<Int>> {
     fun partitionHelper(n: Int, max: Int): List<List<Int>> {
         if (n == 0) return listOf(emptyList())
@@ -32,17 +33,19 @@ fun partitions(n: Int): List<List<Int>> {
         }
         return result
     }
-    return partitionHelper(n, n)
+    return partitionsCache.getOrPut(n) { partitionHelper(n, n) }
 }
 
 /**
  * Function to calculate Landau's function g(n).
  * This function returns the maximum LCM of any partition of n.
  */
-fun landauFunction(n: Int): Int {
-    // Get all partitions of n.
-    val parts = partitions(n)
+private val cachedLandauFunction = mutableMapOf<Int, Int>()
+fun landauFunction(n: Int): Int =
+    cachedLandauFunction.getOrPut(n) {
+        // Get all partitions of n.
+        val parts = partitions(n)
 
-    // Calculate the LCM for each partition and return the maximum LCM.
-    return parts.map { partition -> lcm(partition) }.maxOrNull() ?: 1
-}
+        // Calculate the LCM for each partition and return the maximum LCM.
+        return parts.map { partition -> lcm(partition) }.maxOrNull() ?: 1
+    }
