@@ -2,30 +2,37 @@
 
 package org.vorpal.algebra
 
+import java.util.concurrent.ConcurrentHashMap
+
 
 data class Permutation(val dest: List<Int>) {
     init {
         require(isBijection(dest)) { "$dest does not represent a valid permutation." }
     }
 
+    val size: Int = dest.size
+
     val inverse: Permutation by lazy {
-        // We use a mutable list because this reduces the efficiency to O(n).
-        // Using indexOf would increase the time to O(n^2).
-        val inv = MutableList(dest.size) { 0 }
-        dest.forEachIndexed { index, value -> inv[value] = index }
-        Permutation(inv)
+        invertWithCache(this)
     }
 
     val stabilizer: Set<Int> by lazy {
         IntRange(0, dest.size - 1).filter(this::isStabilized).toSet()
     }
 
+    /**
+     * The order of a permutation is the least common multiple of its cycles, or 1 if it is the identity,
+     * in which case all the cycles are of length 1.
+     */
     val order: Int by lazy {
-        val ident = identity(dest.size)
-        fun aux(curr: Permutation = this, n: Int = 0): Int =
-            if (curr == ident) n
-            else aux(curr.compose(this), n + 1)
-        aux()
+        if (isIdentity) 1 else cycles.map { it.size }.reduce(::lcm)
+    }
+
+    /**
+     * More efficient method to check for identity. It will short-circuit as soon as a deviation is found.
+     */
+    val isIdentity: Boolean by lazy {
+        dest.indices.all { dest[it] == it }
     }
 
     /**
@@ -46,7 +53,7 @@ data class Permutation(val dest: List<Int>) {
             return cycle
         }
 
-        // Auxiliary function to find all cycles
+        // Auxiliary function to find all cycles.
         tailrec fun aux(remaining: Set<Int> = dest.indices.toSet(), cycles: List<List<Int>> = emptyList()): List<List<Int>> =
             if (remaining.isEmpty()) cycles
             else {
@@ -68,14 +75,35 @@ data class Permutation(val dest: List<Int>) {
     }
 
     /**
+     * Extend the permutation from {0, ..., n-1} to {0, ..., m-1} for m >= n, making the elements
+     * from {n, ..., m-1} the identity.
+     */
+    fun extend(m: Int): Permutation {
+        require(m >= size) { "Cannot extend permutation of size $size to $m." }
+        if (m == size) return this
+        return Permutation(dest + (size until m).map { it })
+    }
+
+    /**
      * Calculate the nth power of this permutation.
      * For n = 0, we simply get the identity, and for n = 1, we simply get this permutation.
+     * We use pow by squaring to improve efficiency.
      */
     fun pow(n: Int): Permutation {
-        tailrec fun aux(curr: Permutation = identity(dest.size), currN: Int = n): Permutation =
-            if (currN == 0) curr
-            else aux(this.compose(curr), currN - 1)
-        return aux()
+        require(n >= 0) { "Cannot take permutation to power $n." }
+        var result = identity(size)
+        var base = this
+        var exponent = n
+
+        while (exponent > 0) {
+            if (exponent % 2 == 1) {
+                result = result.compose(base)  // Multiply by base when the exponent is odd
+            }
+            base = base.compose(base)  // Square the base
+            exponent /= 2  // Divide the exponent by 2
+        }
+
+        return result
     }
 
     operator fun get(x: Int): Int {
@@ -94,17 +122,13 @@ data class Permutation(val dest: List<Int>) {
      * This results in a permutation that performs this(inner(x)).
      */
     fun compose(inner: Permutation): Permutation =
-        if (this == identity(dest.size)) inner
-        else if (inner == identity(dest.size)) this
-        else Permutation((0 until dest.size).map { this[inner[it]] })
+        composeWithCache(this, inner)
 
     /**
      * This results in a permutation that performs outer(this(x)).
      */
     fun andThen(outer: Permutation): Permutation =
-        if (this == identity(dest.size)) outer
-        else if (outer == identity(dest.size)) this
-        else Permutation(IntRange(0, dest.size).map { outer[this[it]] })
+        composeWithCache(outer, this)
 
     /**
      * Schreier-Sims algorithms rely on conjugating permutations, e.g.
@@ -168,17 +192,34 @@ data class Permutation(val dest: List<Int>) {
         xs.fold(emptySet()) { acc, x -> acc + orbit(x) }
 
     companion object {
-        private fun isBijection(dest: List<Int>): Boolean =
-            dest.toSet() == IntRange(0, dest.size - 1).toSet()
+        /**
+         * Efficient short-circuited bijection check.
+         */
+        private fun isBijection(dest: List<Int>): Boolean {
+            tailrec fun aux(seen: BooleanArray = BooleanArray(dest.size), idx: Int = 0): Boolean {
+                if (idx == dest.size) return true
+                val img = dest[idx]
+                if (seen[img] || img !in 0 until dest.size) return false
+                seen[img] = true
+                return aux(seen, idx + 1)
+            }
+            return aux()
+        }
 
-        private val identities: MutableMap<Int, Permutation> = mutableMapOf()
+        private val identities = mutableMapOf<Int, Permutation>()
         fun identity(n: Int): Permutation {
             require(n > 0) {"Trying to take identity of permutation over $n elements."}
             return identities.getOrPut(n) { Permutation((0 until n).toList()) }
         }
 
         fun fromTranspositions(transpositions: Collection<Pair<Int, Int>>): Permutation {
+            // The largest value in a transposition determines the length of the permutation.
             val n = transpositions.maxOf { maxOf(it.first, it.second) } + 1
+            transpositions.forEach { (a, b) ->
+                require(a in 0 until n && b in 0 until n && a != b) {
+                    "Illegal transposition found: ($a $b)."
+                }
+            }
             val dest = (0 until n).toMutableList()
             transpositions.forEach { (a, b) ->
                 val tmp = dest[a]
@@ -190,9 +231,29 @@ data class Permutation(val dest: List<Int>) {
 
         fun fromTranspositions(vararg transpositions: Pair<Int, Int>): Permutation =
             fromTranspositions(transpositions.toList())
-    }
-}
 
-fun main() {
-    println("Hello")
+        /**
+         * Cached permutation inversion. We use a ConcurrentHashMap to make this operation thread-safe.
+         */
+        private val invertedPermCache = ConcurrentHashMap<Permutation, Permutation>()
+        private fun invertWithCache(perm: Permutation): Permutation =
+            invertedPermCache.computeIfAbsent(perm) {
+                val inv = MutableList(perm.size) { 0 }
+                perm.dest.forEachIndexed { index, value -> inv[value] = index }
+                Permutation(inv)
+            }
+
+        /**
+         * Cached permutation composition. We use a ConcurrentHashMap to make this operation thread-safe.
+         */
+        private val composedPermCache = ConcurrentHashMap<Pair<Permutation, Permutation>, Permutation>()
+        private fun composeWithCache(perm1: Permutation, perm2: Permutation): Permutation =
+            composedPermCache.computeIfAbsent(perm1 to perm2) { compose(perm1, perm2) }
+        private fun compose(perm1: Permutation, perm2: Permutation): Permutation {
+            require(perm1.size == perm2.size) { "Cannot compose permutations of different sizes ${perm1.size} and ${perm2.size}." }
+            return if (perm1 == identity(perm1.size)) perm2
+            else if (perm2 == identity(perm2.size)) perm1
+            else Permutation((0 until perm1.size).map { perm1[perm2[it]] })
+        }
+    }
 }
