@@ -37,9 +37,10 @@ class SchreierSims(val n: Int) {
         var currPerm = perm
         require(first in 0 until n) { "test asked for row $first, but only $n rows exist." }
         for (i in first until n) {
-            // If i is currPerm[i], then we just use the identity and skip.
+            // If i is currPerm[i], then currPerm stabilizes i, so continue.
             if (i != currPerm[i]) {
                 // Try to get a permutation mapping i to perm[i].
+                // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
                 val iPerm = getPermutation(i, currPerm[i]) ?: return PermutationInfo(i, currPerm)
 
                 // Otherwise, proceed to the next row and calculate what the next mapping
@@ -57,7 +58,11 @@ class SchreierSims(val n: Int) {
      */
     fun add(perm: Permutation): Boolean {
         val tstResults = test(PermutationInfo(0, perm))
+
+        // Check if this permutation can already be created by the group.
         if (tstResults.first == n) return false
+
+        // Otherwise, enter it.
         enter(tstResults)
         return true
     }
@@ -66,40 +71,48 @@ class SchreierSims(val n: Int) {
      * Non-recursive enter method for the Schreier-Sims table to avoid the possibility of a stack overflow.
      */
     private fun enter(info: PermutationInfo) {
-        val stack: MutableList<PermutationInfo> = mutableListOf(info)
+        val stack: MutableList<Permutation> = mutableListOf(info.second)
 
+        // first, p
         val (first, perm) = info
         println("\n\nStarting with row $first, perm $perm")
 
         while (stack.isNotEmpty()) {
-            // Get the next permutation waiting to be processed. If it does not change the table, ignore it.
-            val currInfo = stack.removeLast()
-            val (currFirst, p) = currInfo
-            val (rowIdx, currPerm) = test(currInfo)
+            // Get the permutation waiting to be processed. If it does not change the table, ignore it.
+            val perm = stack.removeLast()
+            val (rowIdx, currPerm) = test(PermutationInfo(first, perm))
 
             // If there are no rows to modify, proceed to the next permutation.
             if (rowIdx == n) continue
-
             val colIdx = currPerm[rowIdx]
+
             // Insert the current permutation into the table.
-            println("Inserting into ($rowIdx, $colIdx): $currPerm")
+            println("Trying to insert into ($rowIdx, $colIdx): $currPerm")
+
+            // --- Assertion checks ---
+            (0 until rowIdx).forEach { i ->
+                if (currPerm[i] != i) println("\tDoes not stabilize $i: maps to ${currPerm[i]}.")
+            }
+            if (currPerm[rowIdx] != colIdx) println("\tDoes not map $rowIdx to $colIdx.")
+            // -------------------------
+
             table[rowIdx][colIdx] = currPerm
 
             // Determine the permutations that we have to insert.
-            (currFirst..rowIdx).forEach { j ->
+            (first..rowIdx).forEach { j ->
                 val row = table[j]
 //                if (!row.containsKey(currPerm[j]))
                     row.values.forEach { perm2 ->
                         println("Adding $currPerm with $j")
-                        stack.add(PermutationInfo(j, currPerm.compose(perm2)))
+                        stack.add(currPerm.compose(perm2))
                     }
             }
             (rowIdx until n).forEach { j ->
                 val row = table[j]
 //                if (!row.containsKey(currPerm[j]))
                     row.values.forEach { perm2 ->
-                        println("Backadding $currPerm with $j")
-                        stack.add(PermutationInfo(j, perm2.compose(currPerm)))
+                        println("Back-adding $currPerm with $j")
+                        stack.add(perm2.compose(currPerm))
                     }
             }
         }
@@ -168,5 +181,8 @@ fun main() {
 
     println(g.add(Permutation(listOf(1, 2, 3, 0))))
     println(g.add(Permutation(listOf(1, 0, 2, 3))))
+
+    // We should not need this.
+    println(g.add(Permutation(listOf(0, 1, 3, 2))))
     println(g.groupSize())
 }
