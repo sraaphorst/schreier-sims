@@ -2,6 +2,9 @@
 
 package org.vorpal.algebra
 
+// Info about a row where a Permutation may belong.
+private typealias PermutationInfo = Pair<Int, Permutation>
+
 /**
  * A Schreier-Sims representation of a finite permutation group.
  * The group is a subgroup of S_n.
@@ -28,17 +31,16 @@ class SchreierSims(val n: Int) {
         return table[src][dst]
     }
 
-    private fun test(perm: Permutation, first: Int): Int {
+    private fun test(info: PermutationInfo): PermutationInfo {
+        val (first, perm) = info
+
         var currPerm = perm
         require(first in 0 until n) { "test asked for row $first, but only $n rows exist." }
         for (i in first until n) {
-            // If i is perm[i], then we just use the identity and skip.
-            if (i != perm[i]) {
+            // If i is currPerm[i], then we just use the identity and skip.
+            if (i != currPerm[i]) {
                 // Try to get a permutation mapping i to perm[i].
-                val iPerm = getPermutation(i, perm[i])
-
-                // If there is no such perm, then we know where the perm needs to be put.
-                if (iPerm == null) return i
+                val iPerm = getPermutation(i, currPerm[i]) ?: return PermutationInfo(i, currPerm)
 
                 // Otherwise, proceed to the next row and calculate what the next mapping
                 // must be for the permutation.
@@ -47,47 +49,61 @@ class SchreierSims(val n: Int) {
         }
 
         // We reached the end: there is nothing to add.
-        return n
+        return PermutationInfo(n, currPerm)
     }
 
     /**
      * Try to add perm to the group. If the permutation is added, return true.
      */
     fun add(perm: Permutation): Boolean {
-        val rowIdx = test(perm, 0)
-        if (rowIdx == n) return false
-        enter(perm)
+        val tstResults = test(PermutationInfo(0, perm))
+        if (tstResults.first == n) return false
+        enter(tstResults)
         return true
     }
 
     /**
      * Non-recursive enter method for the Schreier-Sims table to avoid the possibility of a stack overflow.
      */
-    private fun enter(perm: Permutation) {
-        val stack: MutableList<Pair<Int, Permutation>> = mutableListOf(0 to perm)
+    private fun enter(info: PermutationInfo) {
+        val stack: MutableList<PermutationInfo> = mutableListOf(info)
+
+        val (first, perm) = info
+        println("\n\nStarting with row $first, perm $perm")
+
         while (stack.isNotEmpty()) {
             // Get the next permutation waiting to be processed. If it does not change the table, ignore it.
-            val (currFirst, currPerm) = stack.removeLast()
-            val rowIdx = test(currPerm, currFirst)
+            val currInfo = stack.removeLast()
+            val (currFirst, p) = currInfo
+            val (rowIdx, currPerm) = test(currInfo)
 
             // If there are no rows to modify, proceed to the next permutation.
             if (rowIdx == n) continue
 
+            val colIdx = currPerm[rowIdx]
             // Insert the current permutation into the table.
-            table[rowIdx][currPerm[rowIdx]] = currPerm
+            println("Inserting into ($rowIdx, $colIdx): $currPerm")
+            table[rowIdx][colIdx] = currPerm
 
             // Determine the permutations that we have to insert.
             (currFirst..rowIdx).forEach { j ->
                 val row = table[j]
-                if (!row.containsKey(currPerm[j]))
-                    row.values.forEach { perm2 -> stack.add(j to currPerm.compose(perm2)) }
+//                if (!row.containsKey(currPerm[j]))
+                    row.values.forEach { perm2 ->
+                        println("Adding $currPerm with $j")
+                        stack.add(PermutationInfo(j, currPerm.compose(perm2)))
+                    }
             }
             (rowIdx until n).forEach { j ->
                 val row = table[j]
-                if (!row.containsKey(currPerm[j]))
-                    row.values.forEach { perm2 -> stack.add(j to perm2.compose(currPerm)) }
+//                if (!row.containsKey(currPerm[j]))
+                    row.values.forEach { perm2 ->
+                        println("Backadding $currPerm with $j")
+                        stack.add(PermutationInfo(j, perm2.compose(currPerm)))
+                    }
             }
         }
+        println("Done.")
     }
 
     /**
@@ -138,4 +154,19 @@ class SchreierSims(val n: Int) {
             }
         }
     }
+}
+
+fun main() {
+    val g = SchreierSims(4)
+//    g.add(Permutation(listOf(0, 1, 2, 3)))
+//    g.add(Permutation(listOf(0, 1, 3, 2)))
+//    g.add(Permutation(listOf(0, 2, 1, 3)))
+//    g.add(Permutation(listOf(0, 2, 3, 1)))
+//    g.add(Permutation(listOf(0, 3, 1, 2)))
+//    g.add(Permutation(listOf(0, 3, 2, 1)))
+//    g.add(Permutation(listOf(1, 0, 2, 3)))
+
+    println(g.add(Permutation(listOf(1, 2, 3, 0))))
+    println(g.add(Permutation(listOf(1, 0, 2, 3))))
+    println(g.groupSize())
 }
