@@ -39,7 +39,6 @@ class SchreierSims(val n: Int) {
         for (i in first until n) {
             // If i is currPerm[i], then currPerm stabilizes i, so continue.
             if (i != perm[i]) {
-
                 // Try to get a permutation mapping i to perm[i].
                 // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
                 val perm2 = getPermutation(i, perm[i]) ?: return PermutationInfo(i, perm)
@@ -54,8 +53,8 @@ class SchreierSims(val n: Int) {
     /**
      * Try to add perm to the group. If the permutation is added, return true.
      */
-    fun add(p: Permutation) =
-        enter(PermutationInfo(0, p))
+    fun add(perm: Permutation) =
+        enter(PermutationInfo(0, perm))
 
     /**
      * Non-recursive enter method for the Schreier-Sims table to avoid the possibility of a stack overflow.
@@ -63,43 +62,33 @@ class SchreierSims(val n: Int) {
     private fun enter(info: PermutationInfo) {
         val stack: MutableList<Permutation> = mutableListOf(info.second)
 
-        // first, p
-        var first = info.first
-        var p = info.second
-
-        println("\n\nStarting with row $first, perm $p")
+        val (first, p) = info
         stack.add(p)
 
         while (stack.isNotEmpty()) {
             // Get the permutation waiting to be processed. If it does not change the table, ignore it.
-            var perm = stack.removeLast()
-            var modifiedInfo = test(PermutationInfo(first, perm))
-            var modifiedRow = modifiedInfo.first
-            perm = modifiedInfo.second
+            val perm = stack.removeLast()
+            val results = test(PermutationInfo(first, perm))
 
             // If there are no rows to modify, proceed to the next permutation.
-            if (modifiedRow == n) continue
+            val rowIdx = results.first
+            if (rowIdx == n) continue
 
-            val rowIdx = modifiedRow
-            val colIdx = perm[rowIdx]
-            var tmpperm = getPermutation(rowIdx, colIdx)
-            table[rowIdx][colIdx] = perm
+            var currPerm = results.second
+            val colIdx = currPerm[rowIdx]
+            table[rowIdx][colIdx] = currPerm
 
-            for (j in first..modifiedRow) {
-                for (tmpperm in table[j].values) {
-                    var newperm = perm.compose(tmpperm)
-                    stack.add(newperm)
+            (first..rowIdx).forEach { j ->
+                table[j].values.forEach {
+                    stack.add(currPerm.compose(it))
                 }
             }
-
-            for (j in modifiedRow + 1 until n) {
-                for (tmpperm in table[j].values) {
-                    var newperm = tmpperm.compose(perm)
-                    stack.add(newperm)
+            ((rowIdx+1) until n).forEach { j ->
+                table[j].values.forEach {
+                    stack.add(it.compose(currPerm))
                 }
             }
         }
-        println("Done.")
     }
 
     /**
