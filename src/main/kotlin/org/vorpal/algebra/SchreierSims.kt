@@ -33,24 +33,22 @@ class SchreierSims(val n: Int) {
 
     private fun test(info: PermutationInfo): PermutationInfo {
         var first = info.first
-        var p = info.second
+        var perm = info.second
 
         require(first in 0 until n) { "test asked for row $first, but only $n rows exist." }
         for (i in first until n) {
             // If i is currPerm[i], then currPerm stabilizes i, so continue.
-            if (i == p[i]) continue
+            if (i != perm[i]) {
 
-            // Try to get a permutation mapping i to perm[i].
-            // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
-            val h = getPermutation(i, p[i]) ?: return PermutationInfo(i, p)
-
-            val tmp1 = h.inverse
-            val tmp2 = tmp1.compose(p)
-            p = tmp2
+                // Try to get a permutation mapping i to perm[i].
+                // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
+                val perm2 = getPermutation(i, perm[i]) ?: return PermutationInfo(i, perm)
+                perm = perm2.inverse.compose(perm)
+            }
         }
 
         // We reached the end: there is nothing to add.
-        return PermutationInfo(n, p)
+        return PermutationInfo(n, perm)
     }
 
     /**
