@@ -140,22 +140,3 @@ class SchreierSims(val n: Int) {
         }
     }
 }
-
-fun main() {
-    val s8 = SchreierSims(8)
-    s8.add(Permutation(listOf(1, 2, 3, 4, 5, 6, 7, 0)))
-    s8.add(Permutation(listOf(1, 0)).extend(8))
-    // We should not need this.
-//    println(g.add(Permutation(listOf(0, 1, 3, 2))))
-    println(s8.groupSize())
-
-    val a8 = SchreierSims(8)
-    for (i in 2 until 8) {
-        val perm = (0 until 8).toMutableList()
-        perm[0] = 1
-        perm[1] = i
-        perm[i] = 0
-        a8.add(Permutation(perm))
-    }
-    println(a8.groupSize())
-}
