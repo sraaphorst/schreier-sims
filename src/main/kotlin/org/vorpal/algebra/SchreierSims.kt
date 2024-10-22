@@ -32,40 +32,32 @@ class SchreierSims(val n: Int) {
     }
 
     private fun test(info: PermutationInfo): PermutationInfo {
-        val (first, perm) = info
+        var first = info.first
+        var p = info.second
 
-        var currPerm = perm
         require(first in 0 until n) { "test asked for row $first, but only $n rows exist." }
         for (i in first until n) {
             // If i is currPerm[i], then currPerm stabilizes i, so continue.
-            if (i != currPerm[i]) {
-                // Try to get a permutation mapping i to perm[i].
-                // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
-                val iPerm = getPermutation(i, currPerm[i]) ?: return PermutationInfo(i, currPerm)
+            if (i == p[i]) continue
 
-                // Otherwise, proceed to the next row and calculate what the next mapping
-                // must be for the permutation.
-                currPerm = iPerm.inverse.compose(currPerm)
-            }
+            // Try to get a permutation mapping i to perm[i].
+            // If there is none, as currPerm maps i to currPerm[i], return for insertion in row i.
+            val h = getPermutation(i, p[i]) ?: return PermutationInfo(i, p)
+
+            val tmp1 = h.inverse
+            val tmp2 = tmp1.compose(p)
+            p = tmp2
         }
 
         // We reached the end: there is nothing to add.
-        return PermutationInfo(n, currPerm)
+        return PermutationInfo(n, p)
     }
 
     /**
      * Try to add perm to the group. If the permutation is added, return true.
      */
-    fun add(perm: Permutation): Boolean {
-        val tstResults = test(PermutationInfo(0, perm))
-
-        // Check if this permutation can already be created by the group.
-        if (tstResults.first == n) return false
-
-        // Otherwise, enter it.
-        enter(tstResults)
-        return true
-    }
+    fun add(p: Permutation) =
+        enter(PermutationInfo(0, p))
 
     /**
      * Non-recursive enter method for the Schreier-Sims table to avoid the possibility of a stack overflow.
@@ -74,46 +66,39 @@ class SchreierSims(val n: Int) {
         val stack: MutableList<Permutation> = mutableListOf(info.second)
 
         // first, p
-        val (first, perm) = info
-        println("\n\nStarting with row $first, perm $perm")
+        var first = info.first
+        var p = info.second
+
+        println("\n\nStarting with row $first, perm $p")
+        stack.add(p)
 
         while (stack.isNotEmpty()) {
             // Get the permutation waiting to be processed. If it does not change the table, ignore it.
-            val perm = stack.removeLast()
-            val (rowIdx, currPerm) = test(PermutationInfo(first, perm))
+            var perm = stack.removeLast()
+            var modifiedInfo = test(PermutationInfo(first, perm))
+            var modifiedRow = modifiedInfo.first
+            perm = modifiedInfo.second
 
             // If there are no rows to modify, proceed to the next permutation.
-            if (rowIdx == n) continue
-            val colIdx = currPerm[rowIdx]
+            if (modifiedRow == n) continue
 
-            // Insert the current permutation into the table.
-            println("Trying to insert into ($rowIdx, $colIdx): $currPerm")
+            val rowIdx = modifiedRow
+            val colIdx = perm[rowIdx]
+            var tmpperm = getPermutation(rowIdx, colIdx)
+            table[rowIdx][colIdx] = perm
 
-            // --- Assertion checks ---
-            (0 until rowIdx).forEach { i ->
-                if (currPerm[i] != i) println("\tDoes not stabilize $i: maps to ${currPerm[i]}.")
+            for (j in first..modifiedRow) {
+                for (tmpperm in table[j].values) {
+                    var newperm = perm.compose(tmpperm)
+                    stack.add(newperm)
+                }
             }
-            if (currPerm[rowIdx] != colIdx) println("\tDoes not map $rowIdx to $colIdx.")
-            // -------------------------
 
-            table[rowIdx][colIdx] = currPerm
-
-            // Determine the permutations that we have to insert.
-            (first..rowIdx).forEach { j ->
-                val row = table[j]
-//                if (!row.containsKey(currPerm[j]))
-                    row.values.forEach { perm2 ->
-                        println("Adding $currPerm with $j")
-                        stack.add(currPerm.compose(perm2))
-                    }
-            }
-            (rowIdx until n).forEach { j ->
-                val row = table[j]
-//                if (!row.containsKey(currPerm[j]))
-                    row.values.forEach { perm2 ->
-                        println("Back-adding $currPerm with $j")
-                        stack.add(perm2.compose(currPerm))
-                    }
+            for (j in modifiedRow + 1 until n) {
+                for (tmpperm in table[j].values) {
+                    var newperm = tmpperm.compose(perm)
+                    stack.add(newperm)
+                }
             }
         }
         println("Done.")
@@ -170,19 +155,20 @@ class SchreierSims(val n: Int) {
 }
 
 fun main() {
-    val g = SchreierSims(4)
-//    g.add(Permutation(listOf(0, 1, 2, 3)))
-//    g.add(Permutation(listOf(0, 1, 3, 2)))
-//    g.add(Permutation(listOf(0, 2, 1, 3)))
-//    g.add(Permutation(listOf(0, 2, 3, 1)))
-//    g.add(Permutation(listOf(0, 3, 1, 2)))
-//    g.add(Permutation(listOf(0, 3, 2, 1)))
-//    g.add(Permutation(listOf(1, 0, 2, 3)))
-
-    println(g.add(Permutation(listOf(1, 2, 3, 0))))
-    println(g.add(Permutation(listOf(1, 0, 2, 3))))
-
+    val s8 = SchreierSims(8)
+    s8.add(Permutation(listOf(1, 2, 3, 4, 5, 6, 7, 0)))
+    s8.add(Permutation(listOf(1, 0)).extend(8))
     // We should not need this.
-    println(g.add(Permutation(listOf(0, 1, 3, 2))))
-    println(g.groupSize())
+//    println(g.add(Permutation(listOf(0, 1, 3, 2))))
+    println(s8.groupSize())
+
+    val a8 = SchreierSims(8)
+    for (i in 2 until 8) {
+        val perm = (0 until 8).toMutableList()
+        perm[0] = 1
+        perm[1] = i
+        perm[i] = 0
+        a8.add(Permutation(perm))
+    }
+    println(a8.groupSize())
 }
